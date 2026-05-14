@@ -231,6 +231,11 @@ type Device struct {
 	BusinessName string
 	PushName     string
 
+	// OSName / OSVersion 用于每个账号自定义系统信息（配对时通过 ClientPayload 上报）
+	// 留空则使用全局默认值（store.SetOSInfo 设置的值）
+	OSName    string
+	OSVersion [3]uint32
+
 	LIDMigrationTimestamp int64
 
 	FacebookUUID uuid.UUID

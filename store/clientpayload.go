@@ -76,7 +76,7 @@ func (vc WAVersionContainer) ProtoAppVersion() *waWa6.ClientPayload_UserAgent_Ap
 }
 
 // waVersion is the WhatsApp web client version
-var waVersion = WAVersionContainer{2, 3000, 1039406452}
+var waVersion = WAVersionContainer{2, 3000, 1038839325}
 
 // waVersionHash is the md5 hash of a dot-separated waVersion
 var waVersionHash = waVersion.Hash()
@@ -165,13 +165,25 @@ func SetOSInfo(name string, version [3]uint32) {
 	BaseClientPayload.UserAgent.OsBuildNumber = BaseClientPayload.UserAgent.OsVersion
 }
 
+func (device *Device) applyOSInfo(payload *waWa6.ClientPayload) {
+	if device.OSName != "" {
+		payload.UserAgent.OsVersion = proto.String(fmt.Sprintf("%d.%d.%d", device.OSVersion[0], device.OSVersion[1], device.OSVersion[2]))
+		payload.UserAgent.OsBuildNumber = payload.UserAgent.OsVersion
+	}
+}
+
 func (device *Device) getRegistrationPayload() *waWa6.ClientPayload {
 	payload := proto.Clone(BaseClientPayload).(*waWa6.ClientPayload)
+	device.applyOSInfo(payload)
 	regID := make([]byte, 4)
 	binary.BigEndian.PutUint32(regID, device.RegistrationID)
 	preKeyID := make([]byte, 4)
 	binary.BigEndian.PutUint32(preKeyID, device.SignedPreKey.KeyID)
-	deviceProps, _ := proto.Marshal(DeviceProps)
+	deviceProps := proto.Clone(DeviceProps).(*waCompanionReg.DeviceProps)
+	if device.OSName != "" {
+		deviceProps.Os = &device.OSName
+	}
+	devicePropsBytes, _ := proto.Marshal(deviceProps)
 	payload.DevicePairingData = &waWa6.ClientPayload_DevicePairingRegistrationData{
 		ERegid:      regID,
 		EKeytype:    []byte{ecc.DjbType},
@@ -180,7 +192,7 @@ func (device *Device) getRegistrationPayload() *waWa6.ClientPayload {
 		ESkeyVal:    device.SignedPreKey.Pub[:],
 		ESkeySig:    device.SignedPreKey.Signature[:],
 		BuildHash:   waVersionHash[:],
-		DeviceProps: deviceProps,
+		DeviceProps: devicePropsBytes,
 	}
 	payload.Passive = proto.Bool(false)
 	payload.Pull = proto.Bool(false)
@@ -189,6 +201,7 @@ func (device *Device) getRegistrationPayload() *waWa6.ClientPayload {
 
 func (device *Device) getLoginPayload() *waWa6.ClientPayload {
 	payload := proto.Clone(BaseClientPayload).(*waWa6.ClientPayload)
+	device.applyOSInfo(payload)
 	payload.Username = proto.Uint64(device.ID.UserInt())
 	payload.Device = proto.Uint32(uint32(device.ID.Device))
 	payload.Passive = proto.Bool(true)
