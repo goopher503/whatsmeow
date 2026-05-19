@@ -34,6 +34,9 @@ type Container struct {
 
 var _ store.DeviceContainer = (*Container)(nil)
 
+// DB returns the underlying database handle.
+func (c *Container) DB() *dbutil.Database { return c.db }
+
 // New connects to the given SQL database and wraps it in a Container.
 //
 // Only SQLite and Postgres are currently fully supported.
