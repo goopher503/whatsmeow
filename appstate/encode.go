@@ -33,8 +33,29 @@ type PatchInfo struct {
 	Timestamp time.Time
 	// Type is the app state type being mutated.
 	Type WAPatchName
+	// Operation is SET or REMOVE. Zero value means SET.
+	Operation waServerSync.SyncdMutation_SyncdOperation
 	// Mutations contains the individual mutations to apply to the app state in this patch.
 	Mutations []MutationInfo
+}
+
+// BuildContact 将号码加入 WhatsApp 通讯录（app state contact）。
+func BuildContact(target types.JID, fullName string) PatchInfo {
+	return PatchInfo{
+		Type:      WAPatchCriticalUnblockLow,
+		Operation: waServerSync.SyncdMutation_SET,
+		Mutations: []MutationInfo{{
+			Index:   []string{IndexContact, target.ToNonAD().String()},
+			Version: 2,
+			Value: &waSyncAction.SyncActionValue{
+				ContactAction: &waSyncAction.ContactAction{
+					FullName:                 proto.String(fullName),
+					FirstName:                proto.String(fullName),
+					SaveOnPrimaryAddressbook: proto.Bool(true),
+				},
+			},
+		}},
+	}
 }
 
 // BuildMute builds an app state patch for muting or unmuting a chat.
@@ -296,11 +317,15 @@ func (proc *Processor) EncodePatch(ctx context.Context, keyID []byte, state Hash
 			return nil, fmt.Errorf("failed to encrypt mutation: %w", err)
 		}
 
-		valueMac := generateContentMAC(waServerSync.SyncdMutation_SET, encryptedContent, keyID, keys.ValueMAC)
+		op := patchInfo.Operation
+		if op == 0 {
+			op = waServerSync.SyncdMutation_SET
+		}
+		valueMac := generateContentMAC(op, encryptedContent, keyID, keys.ValueMAC)
 		indexMac := concatAndHMAC(sha256.New, keys.Index, indexBytes)
 
 		mutations = append(mutations, &waServerSync.SyncdMutation{
-			Operation: waServerSync.SyncdMutation_SET.Enum(),
+			Operation: op.Enum(),
 			Record: &waServerSync.SyncdRecord{
 				Index: &waServerSync.SyncdIndex{Blob: indexMac},
 				Value: &waServerSync.SyncdValue{Blob: append(encryptedContent, valueMac...)},

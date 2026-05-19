@@ -898,6 +898,56 @@ func (cli *Client) sendDM(
 	return phash, data, nil
 }
 
+func nestedImageMessage(msg *waE2E.Message) *waE2E.ImageMessage {
+	if msg == nil {
+		return nil
+	}
+	if msg.ImageMessage != nil {
+		return msg.ImageMessage
+	}
+	if msg.InteractiveMessage != nil && msg.InteractiveMessage.GetHeader() != nil {
+		return msg.InteractiveMessage.GetHeader().GetImageMessage()
+	}
+	if msg.ButtonsMessage != nil {
+		return msg.ButtonsMessage.GetImageMessage()
+	}
+	if tmpl := msg.TemplateMessage; tmpl != nil {
+		hydrated := tmpl.GetHydratedFourRowTemplate()
+		if hydrated == nil {
+			hydrated = tmpl.GetHydratedTemplate()
+		}
+		if hydrated != nil {
+			return hydrated.GetImageMessage()
+		}
+	}
+	return nil
+}
+
+func nestedVideoMessage(msg *waE2E.Message) *waE2E.VideoMessage {
+	if msg == nil {
+		return nil
+	}
+	if msg.VideoMessage != nil {
+		return msg.VideoMessage
+	}
+	if msg.InteractiveMessage != nil && msg.InteractiveMessage.GetHeader() != nil {
+		return msg.InteractiveMessage.GetHeader().GetVideoMessage()
+	}
+	if msg.ButtonsMessage != nil {
+		return msg.ButtonsMessage.GetVideoMessage()
+	}
+	if tmpl := msg.TemplateMessage; tmpl != nil {
+		hydrated := tmpl.GetHydratedFourRowTemplate()
+		if hydrated == nil {
+			hydrated = tmpl.GetHydratedTemplate()
+		}
+		if hydrated != nil {
+			return hydrated.GetVideoMessage()
+		}
+	}
+	return nil
+}
+
 func getTypeFromMessage(msg *waE2E.Message) string {
 	switch {
 	case msg.ViewOnceMessage != nil:
@@ -941,6 +991,10 @@ func getMediaTypeFromMessage(msg *waE2E.Message) string {
 		return getMediaTypeFromMessage(msg.DocumentWithCaptionMessage.Message)
 	case msg.ExtendedTextMessage != nil && msg.ExtendedTextMessage.Title != nil:
 		return "url"
+	case nestedImageMessage(msg) != nil:
+		return "image"
+	case nestedVideoMessage(msg) != nil:
+		return "video"
 	case msg.ImageMessage != nil:
 		return "image"
 	case msg.StickerMessage != nil:
@@ -990,6 +1044,10 @@ func getButtonTypeFromMessage(msg *waE2E.Message) string {
 		return getButtonTypeFromMessage(msg.EphemeralMessage.Message)
 	case msg.ButtonsMessage != nil:
 		return "buttons"
+	case msg.TemplateMessage != nil:
+		return "template"
+	case msg.InteractiveMessage != nil:
+		return "interactive"
 	case msg.ButtonsResponseMessage != nil:
 		return "buttons_response"
 	case msg.ListMessage != nil:
@@ -1020,6 +1078,102 @@ func getButtonAttributes(msg *waE2E.Message) waBinary.Attrs {
 		}
 	default:
 		return waBinary.Attrs{}
+	}
+}
+
+func unwrapButtonMessage(msg *waE2E.Message) *waE2E.Message {
+	for msg != nil {
+		switch {
+		case msg.ViewOnceMessage != nil:
+			msg = msg.ViewOnceMessage.Message
+		case msg.ViewOnceMessageV2 != nil:
+			msg = msg.ViewOnceMessageV2.Message
+		case msg.EphemeralMessage != nil:
+			msg = msg.EphemeralMessage.Message
+		default:
+			return msg
+		}
+	}
+	return nil
+}
+
+func messageUsesNativeFlowBiz(msg *waE2E.Message) bool {
+	m := unwrapButtonMessage(msg)
+	if m == nil {
+		return false
+	}
+	if m.InteractiveMessage != nil && m.InteractiveMessage.GetNativeFlowMessage() != nil {
+		return true
+	}
+	if m.ButtonsMessage != nil {
+		for _, btn := range m.ButtonsMessage.GetButtons() {
+			if btn.GetType() == waE2E.ButtonsMessage_Button_NATIVE_FLOW {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// makeNativeFlowBizNode matches official client traffic for cta_url / mixed native flow buttons.
+func makeNativeFlowBizNode() waBinary.Node {
+	return waBinary.Node{
+		Tag: "biz",
+		Content: []waBinary.Node{{
+			Tag: "interactive",
+			Attrs: waBinary.Attrs{
+				"type": "native_flow",
+				"v":    "1",
+			},
+			Content: []waBinary.Node{{
+				Tag: "native_flow",
+				Attrs: waBinary.Attrs{
+					"v":    "9",
+					"name": "mixed",
+				},
+			}},
+		}},
+	}
+}
+
+func makeBizNodeForMessage(msg *waE2E.Message) (waBinary.Node, bool) {
+	if messageUsesNativeFlowBiz(msg) {
+		return makeNativeFlowBizNode(), true
+	}
+	buttonType := getButtonTypeFromMessage(msg)
+	if buttonType == "" {
+		return waBinary.Node{}, false
+	}
+	return waBinary.Node{
+		Tag: "biz",
+		Content: []waBinary.Node{{
+			Tag:   buttonType,
+			Attrs: getButtonAttributes(msg),
+		}},
+	}, true
+}
+
+func chatJIDFromMsgAttrs(attrs waBinary.Attrs) types.JID {
+	toVal, ok := attrs["to"]
+	if !ok {
+		return types.EmptyJID
+	}
+	jid, err := types.ParseJID(fmt.Sprint(toVal))
+	if err != nil {
+		return types.EmptyJID
+	}
+	return jid
+}
+
+func isPrivateChatJID(jid types.JID) bool {
+	if jid.IsEmpty() {
+		return false
+	}
+	switch jid.Server {
+	case types.GroupServer, types.BroadcastServer, types.NewsletterServer:
+		return false
+	default:
+		return true
 	}
 }
 
@@ -1141,14 +1295,14 @@ func (cli *Client) getMessageContent(
 		content = append(content, *extraParams.additionalNodes...)
 	}
 
-	if buttonType := getButtonTypeFromMessage(message); buttonType != "" {
-		content = append(content, waBinary.Node{
-			Tag: "biz",
-			Content: []waBinary.Node{{
-				Tag:   buttonType,
-				Attrs: getButtonAttributes(message),
-			}},
-		})
+	if bizNode, ok := makeBizNodeForMessage(message); ok {
+		content = append(content, bizNode)
+		if isPrivateChatJID(chatJIDFromMsgAttrs(msgAttrs)) {
+			content = append(content, waBinary.Node{
+				Tag:   "bot",
+				Attrs: waBinary.Attrs{"biz_bot": "1"},
+			})
+		}
 	}
 	return content
 }

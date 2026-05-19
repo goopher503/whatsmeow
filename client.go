@@ -827,7 +827,14 @@ func (cli *Client) handleFrame(ctx context.Context, data []byte) {
 		cli.Log.Debugf("Errored frame hex: %s", hex.EncodeToString(decompressed))
 		return
 	}
-	cli.recvLog.Debugf("%s", node.XMLString())
+	if waBinary.TraceOutboundXML {
+		cli.recvLog.Debugf("%s", node.XMLStringTrace())
+	} else {
+		cli.recvLog.Debugf("%s", node.XMLString())
+	}
+	if waBinary.TraceOutboundXML && node != nil && node.Tag == "message" {
+		cli.logMessageTrace(*node, "RECV")
+	}
 	if node.Tag == "xmlstreamend" {
 		if !cli.isExpectedDisconnect() {
 			cli.Log.Warnf("Received stream end frame")
@@ -906,8 +913,26 @@ func (cli *Client) sendNodeAndGetData(ctx context.Context, node waBinary.Node) (
 		return nil, fmt.Errorf("failed to marshal node: %w", err)
 	}
 
-	cli.sendLog.Debugf("%s", node.XMLString())
+	if waBinary.TraceOutboundXML {
+		cli.sendLog.Debugf("%s", node.XMLStringTrace())
+	} else {
+		cli.sendLog.Debugf("%s", node.XMLString())
+	}
+	if waBinary.TraceOutboundXML && node.Tag == "message" {
+		cli.logMessageTrace(node, "SEND")
+	}
 	return payload, sock.SendFrame(ctx, payload)
+}
+
+// logMessageTrace 用 INFO 打印出站/入站 message 骨架（含完整 biz/bot，跳过 enc 密文）。
+func (cli *Client) logMessageTrace(node waBinary.Node, direction string) {
+	attrs := node.Attrs
+	msgType, _ := attrs["type"]
+	to, _ := attrs["to"]
+	id, _ := attrs["id"]
+	from, _ := attrs["from"]
+	cli.Log.Infof("[message_trace] %s type=%v id=%v to=%v from=%v\n%s",
+		direction, msgType, id, to, from, node.XMLStringTrace())
 }
 
 func (cli *Client) sendNode(ctx context.Context, node waBinary.Node) error {
