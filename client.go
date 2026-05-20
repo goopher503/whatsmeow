@@ -72,6 +72,7 @@ type Client struct {
 	isLoggedIn            atomic.Bool
 	expectedDisconnect    *exsync.Event
 	forceAutoReconnect    atomic.Bool
+	autoReconnectRunning  atomic.Bool
 	EnableAutoReconnect   bool
 	InitialAutoReconnect  bool
 	LastSuccessfulConnect time.Time
@@ -607,6 +608,11 @@ func (cli *Client) autoReconnect(ctx context.Context) {
 	if !cli.EnableAutoReconnect || cli.Store.ID == nil {
 		return
 	}
+	if !cli.autoReconnectRunning.CompareAndSwap(false, true) {
+		cli.Log.Debugf("Skipping duplicate autoReconnect")
+		return
+	}
+	defer cli.autoReconnectRunning.Store(false)
 	for {
 		autoReconnectDelay := time.Duration(cli.AutoReconnectErrors) * 2 * time.Second
 		cli.Log.Debugf("Automatically reconnecting after %v", autoReconnectDelay)
@@ -918,9 +924,9 @@ func (cli *Client) sendNodeAndGetData(ctx context.Context, node waBinary.Node) (
 	} else {
 		cli.sendLog.Debugf("%s", node.XMLString())
 	}
-	if waBinary.TraceOutboundXML && node.Tag == "message" {
-		cli.logMessageTrace(node, "SEND")
-	}
+	// if waBinary.TraceOutboundXML && node.Tag == "message" {
+	// 	cli.logMessageTrace(node, "SEND")
+	// }
 	return payload, sock.SendFrame(ctx, payload)
 }
 

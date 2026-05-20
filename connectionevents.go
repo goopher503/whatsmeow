@@ -32,9 +32,17 @@ func (cli *Client) handleStreamError(ctx context.Context, node *waBinary.Node) {
 		cli.Log.Infof("Got 515 code, reconnecting...")
 		go func() {
 			cli.Disconnect()
+			if !cli.autoReconnectRunning.CompareAndSwap(false, true) {
+				cli.Log.Debugf("515 reconnect already in progress, falling back to autoReconnect")
+				cli.resetExpectedDisconnect()
+				go cli.autoReconnect(ctx)
+				return
+			}
+			defer cli.autoReconnectRunning.Store(false)
 			err := cli.connect(ctx)
 			if err != nil {
 				cli.Log.Errorf("Failed to reconnect after 515 code: %v", err)
+				go cli.autoReconnect(ctx)
 			}
 		}()
 	case code == "401" && conflictType == "device_removed":

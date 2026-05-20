@@ -24,7 +24,7 @@ var (
 	KeepAliveIntervalMax = 30 * time.Second
 
 	// KeepAliveMaxFailTime specifies the maximum time to wait before forcing a reconnect if keepalives fail repeatedly.
-	KeepAliveMaxFailTime = 3 * time.Minute
+	KeepAliveMaxFailTime = 1 * time.Minute
 )
 
 func (cli *Client) keepAliveLoop(ctx, connCtx context.Context) {
@@ -45,9 +45,7 @@ func (cli *Client) keepAliveLoop(ctx, connCtx context.Context) {
 				})
 				if cli.EnableAutoReconnect && time.Since(lastSuccess) > KeepAliveMaxFailTime {
 					cli.Log.Debugf("Forcing reconnect due to keepalive failure")
-					cli.Disconnect()
-					cli.resetExpectedDisconnect()
-					go cli.autoReconnect(ctx)
+					cli.ResetConnection()
 				}
 			} else {
 				if errorCount > 0 {
