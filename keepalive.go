@@ -77,7 +77,7 @@ func (cli *Client) sendKeepAlive(ctx context.Context) (isSuccess, shouldContinue
 		// All good
 		return true, true
 	case <-time.After(KeepAliveResponseDeadline):
-		cli.Log.Warnf("Keepalive timed out")
+		cli.Log.Debugf("Keepalive timed out")
 		return false, true
 	case <-ctx.Done():
 		return false, false

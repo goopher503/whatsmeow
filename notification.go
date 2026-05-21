@@ -82,7 +82,7 @@ func (cli *Client) handleAppStateNotification(ctx context.Context, node *waBinar
 			cli.Log.Debugf("Failed to sync app state after notification: %v, not trying to sync other states", err)
 			return
 		} else if err != nil {
-			cli.Log.Errorf("Failed to sync app state after notification: %v", err)
+			cli.Log.Debugf("Failed to sync app state after notification: %v", err)
 		}
 	}
 }
