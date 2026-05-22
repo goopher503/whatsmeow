@@ -203,7 +203,7 @@ func (cli *Client) handleConnectSuccess(ctx context.Context, node *waBinary.Node
 		}
 		err := cli.SetPassive(ctx, false)
 		if err != nil {
-			cli.Log.Warnf("Failed to send post-connect passive IQ: %v", err)
+			cli.Log.Debugf("Failed to send post-connect passive IQ: %v", err)
 		}
 		cli.dispatchEvent(&events.Connected{})
 		cli.closeSocketWaitChan()

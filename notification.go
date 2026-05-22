@@ -435,7 +435,7 @@ func (cli *Client) handleStatusNotification(ctx context.Context, node *waBinary.
 	}
 	status, ok := child.Content.([]byte)
 	if !ok {
-		cli.Log.Warnf("Set status notification has unexpected content (%T)", child.Content)
+		cli.Log.Debugf("Set status notification has unexpected content (%T)", child.Content)
 		return
 	}
 	cli.dispatchEvent(&events.UserAbout{

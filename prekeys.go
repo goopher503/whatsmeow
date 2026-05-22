@@ -68,7 +68,7 @@ func (cli *Client) uploadPreKeys(ctx context.Context, initialUpload bool) {
 		cli.Log.Errorf("Failed to get prekeys to upload: %v", err)
 		return
 	}
-	cli.Log.Infof("Uploading %d new prekeys to server", len(preKeys))
+	cli.Log.Debugf("Uploading %d new prekeys to server", len(preKeys))
 	_, err = cli.sendIQ(ctx, infoQuery{
 		Namespace: "encrypt",
 		Type:      "set",

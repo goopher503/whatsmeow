@@ -263,7 +263,7 @@ func (cli *Client) handlePlaintextMessage(ctx context.Context, info *types.Messa
 	}
 	plaintextBody, ok := plaintext.Content.([]byte)
 	if !ok {
-		cli.Log.Warnf("Plaintext message from %s doesn't have byte content", info.SourceString())
+		cli.Log.Debugf("Plaintext message from %s doesn't have byte content", info.SourceString())
 		return
 	}
 
@@ -299,7 +299,7 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 	unavailableNode, ok := node.GetOptionalChildByTag("unavailable")
 	if ok && len(node.GetChildrenByTag("enc")) == 0 {
 		uType := events.UnavailableType(unavailableNode.AttrGetter().String("type"))
-		cli.Log.Warnf("Unavailable message %s from %s (type: %q)", info.ID, info.SourceString(), uType)
+		cli.Log.Debugf("Unavailable message %s from %s (type: %q)", info.ID, info.SourceString(), uType)
 		cli.backgroundIfAsyncAck(func() {
 			cli.immediateRequestMessageFromPhone(ctx, info)
 			cli.sendAck(ctx, node, 0)
@@ -380,7 +380,7 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 			cli.Log.Debugf("Ignoring message %s from %s: %v", info.ID, info.SourceString(), err)
 			continue
 		} else if errors.Is(err, signalerror.ErrOldCounter) {
-			cli.Log.Warnf("Ignoring message %s from %s: %v", info.ID, info.SourceString(), err)
+			cli.Log.Debugf("Ignoring message %s from %s: %v", info.ID, info.SourceString(), err)
 			continue
 		} else if err != nil {
 			cli.Log.Debugf("Error decrypting message %s from %s: %v", info.ID, info.SourceString(), err)
@@ -562,7 +562,7 @@ func (cli *Client) decryptDM(ctx context.Context, child *waBinary.Node, from typ
 		plaintext, ciphertextHash, err = cli.bufferedDecrypt(ctx, content, serverTS, func(decryptCtx context.Context) ([]byte, error) {
 			pt, innerErr := cipher.DecryptMessage(decryptCtx, preKeyMsg)
 			if cli.AutoTrustIdentity && errors.Is(innerErr, signalerror.ErrUntrustedIdentity) {
-				cli.Log.Warnf("Got %v error while trying to decrypt prekey message from %s, clearing stored identity and retrying", innerErr, from)
+				cli.Log.Debugf("Got %v error while trying to decrypt prekey message from %s, clearing stored identity and retrying", innerErr, from)
 				if innerErr = cli.clearUntrustedIdentity(decryptCtx, from); innerErr != nil {
 					innerErr = fmt.Errorf("failed to clear untrusted identity: %w", innerErr)
 					return nil, innerErr
@@ -692,7 +692,7 @@ func (cli *Client) handleHistorySyncNotificationLoop() {
 				cli.dispatchEvent(&events.HistorySync{Data: blob})
 				err = cli.DeleteMedia(ctx, MediaHistory, notif.GetDirectPath(), notif.GetFileEncSHA256(), notif.GetEncHandle())
 				if err != nil {
-					cli.Log.Warnf("Failed to delete history sync media from server: %v", err)
+					cli.Log.Debugf("Failed to delete history sync media from server: %v", err)
 				}
 			}
 		case <-time.After(1 * time.Minute):
@@ -809,7 +809,7 @@ func (cli *Client) handleAppStateSyncKeyShare(ctx context.Context, keys *waE2E.A
 	for _, name := range appstate.AllPatchNames {
 		err := cli.FetchAppState(ctx, name, false, onlyResyncIfNotSynced)
 		if err != nil {
-			cli.Log.Errorf("Failed to do initial fetch of app state %s: %v", name, err)
+			cli.Log.Debugf("Failed to do initial fetch of app state %s: %v", name, err)
 		}
 	}
 }
@@ -822,7 +822,7 @@ func (cli *Client) handlePlaceholderResendResponse(msg *waE2E.PeerDataOperationR
 	for i, part := range parts {
 		var webMsg waWeb.WebMessageInfo
 		if resp := part.GetPlaceholderMessageResendResponse(); resp == nil {
-			cli.Log.Warnf("Missing response in item #%d of response to %s", i+1, reqID)
+			cli.Log.Debugf("Missing response in item #%d of response to %s", i+1, reqID)
 		} else if err := proto.Unmarshal(resp.GetWebMessageInfoBytes(), &webMsg); err != nil {
 			cli.Log.Warnf("Failed to unmarshal protobuf web message in item #%d of response to %s: %v", i+1, reqID, err)
 		} else if msgEvt, err := cli.ParseWebMessage(types.EmptyJID, &webMsg); err != nil {
@@ -977,7 +977,7 @@ func (cli *Client) storeHistoricalMessageSecrets(ctx context.Context, conversati
 		if err != nil {
 			cli.Log.Errorf("Failed to store message secret keys in history sync: %v", err)
 		} else {
-			cli.Log.Infof("Stored %d message secret keys from history sync", len(secrets))
+			cli.Log.Debugf("Stored %d message secret keys from history sync", len(secrets))
 		}
 	}
 	if len(privacyTokens) > 0 {

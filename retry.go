@@ -446,7 +446,7 @@ func (cli *Client) delayedRequestMessageFromPhone(info *types.MessageInfo) {
 func (cli *Client) immediateRequestMessageFromPhone(ctx context.Context, info *types.MessageInfo) {
 	_, err := cli.SendPeerMessage(ctx, cli.BuildUnavailableMessageRequest(info.Chat, info.Sender, info.ID))
 	if err != nil {
-		cli.Log.Warnf("Failed to send request for unavailable message %s to phone: %v", info.ID, err)
+		cli.Log.Debugf("Failed to send request for unavailable message %s to phone: %v", info.ID, err)
 	} else {
 		cli.Log.Debugf("Requested message %s from phone", info.ID)
 	}
@@ -480,7 +480,7 @@ func (cli *Client) sendRetryReceipt(ctx context.Context, node *waBinary.Node, in
 	}
 	cli.messageRetriesLock.Unlock()
 	if retryCount >= 5 {
-		cli.Log.Warnf("Not sending any more retry receipts for %s", id)
+		cli.Log.Debugf("Not sending any more retry receipts for %s", id)
 		return
 	}
 	if retryCount == 1 {

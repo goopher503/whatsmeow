@@ -496,7 +496,7 @@ func (cli *Client) requestAppStateKeys(ctx context.Context, rawKeyIDs [][]byte) 
 	cli.Log.Debugf("Sending key request for app state keys %+v", debugKeyIDs)
 	_, err := cli.SendPeerMessage(ctx, msg)
 	if err != nil {
-		cli.Log.Warnf("Failed to send app state key request: %v", err)
+		cli.Log.Debugf("Failed to send app state key request: %v", err)
 	}
 }
 
