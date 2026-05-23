@@ -121,8 +121,14 @@ var BaseClientPayload = &waWa6.ClientPayload{
 	ConnectReason: waWa6.ClientPayload_USER_ACTIVATED.Enum(),
 }
 
+const DefaultClientOSName = "Windows"
+
+func init() {
+	SetWebClientInfo(DefaultClientOSName, [3]uint32{10, 0, 0}, waCompanionReg.DeviceProps_CHROME)
+}
+
 var DeviceProps = &waCompanionReg.DeviceProps{
-	Os: proto.String("whatsmeow"),
+	Os: proto.String(DefaultClientOSName),
 	Version: &waCompanionReg.DeviceProps_AppVersion{
 		Primary:   proto.Uint32(0),
 		Secondary: proto.Uint32(1),
@@ -152,7 +158,7 @@ var DeviceProps = &waCompanionReg.DeviceProps{
 		SupportManusHistory:                      proto.Bool(true),
 		SupportHatchHistory:                      proto.Bool(true),
 	},
-	PlatformType:    waCompanionReg.DeviceProps_UNKNOWN.Enum(),
+	PlatformType:    waCompanionReg.DeviceProps_CHROME.Enum(),
 	RequireFullSync: proto.Bool(false),
 }
 
@@ -163,6 +169,12 @@ func SetOSInfo(name string, version [3]uint32) {
 	DeviceProps.Version.Tertiary = &version[2]
 	BaseClientPayload.UserAgent.OsVersion = proto.String(fmt.Sprintf("%d.%d.%d", version[0], version[1], version[2]))
 	BaseClientPayload.UserAgent.OsBuildNumber = BaseClientPayload.UserAgent.OsVersion
+}
+
+// SetWebClientInfo 设置 Web 客户端在「已关联的设备」中的显示信息（浏览器名 + OS + 图标）。
+func SetWebClientInfo(osName string, osVersion [3]uint32, platformType waCompanionReg.DeviceProps_PlatformType) {
+	SetOSInfo(osName, osVersion)
+	DeviceProps.PlatformType = platformType.Enum()
 }
 
 func (device *Device) applyOSInfo(payload *waWa6.ClientPayload) {
@@ -182,6 +194,9 @@ func (device *Device) getRegistrationPayload() *waWa6.ClientPayload {
 	deviceProps := proto.Clone(DeviceProps).(*waCompanionReg.DeviceProps)
 	if device.OSName != "" {
 		deviceProps.Os = &device.OSName
+	}
+	if device.OSPlatformType != nil {
+		deviceProps.PlatformType = device.OSPlatformType
 	}
 	devicePropsBytes, _ := proto.Marshal(deviceProps)
 	payload.DevicePairingData = &waWa6.ClientPayload_DevicePairingRegistrationData{

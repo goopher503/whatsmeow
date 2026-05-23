@@ -633,7 +633,7 @@ func (cli *Client) autoReconnect(ctx context.Context) {
 				cli.Log.Debugf("Autoreconnect failed, but disconnect was expected, not reconnecting")
 				return
 			}
-			cli.Log.Errorf("Error reconnecting after autoreconnect sleep: %v", err)
+			cli.Log.Debugf("Error reconnecting after autoreconnect sleep: %v", err)
 			if cli.AutoReconnectHook != nil && !cli.AutoReconnectHook(err) {
 				cli.Log.Debugf("AutoReconnectHook returned false, not reconnecting")
 				return

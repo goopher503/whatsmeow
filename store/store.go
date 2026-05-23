@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"go.mau.fi/whatsmeow/proto/waAdv"
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/util/keys"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -235,6 +236,8 @@ type Device struct {
 	// 留空则使用全局默认值（store.SetOSInfo 设置的值）
 	OSName    string
 	OSVersion [3]uint32
+	// OSPlatformType 配对时上报的浏览器/平台类型（如 CHROME）；nil 则使用 DeviceProps 全局默认。
+	OSPlatformType *waCompanionReg.DeviceProps_PlatformType
 
 	LIDMigrationTimestamp int64
 

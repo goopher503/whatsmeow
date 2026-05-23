@@ -368,7 +368,7 @@ func (cli *Client) downloadPossiblyEncryptedMediaWithRetries(ctx context.Context
 		if errors.As(err, &httpErr) {
 			retryDuration = retryafter.Parse(httpErr.Response.Header.Get("Retry-After"), retryDuration)
 		}
-		cli.Log.Warnf("Failed to download media due to network error: %v, retrying in %s...", err, retryDuration)
+		cli.Log.Debugf("Failed to download media due to network error: %v, retrying in %s...", err, retryDuration)
 		select {
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()

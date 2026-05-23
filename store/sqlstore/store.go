@@ -297,7 +297,7 @@ func (s *SQLStore) MigratePNToLID(ctx context.Context, pn, lid types.JID) error 
 		return err
 	}
 	if sessionsUpdated > 0 || senderKeysUpdated > 0 || identityKeysUpdated > 0 {
-		s.log.Infof("Migrated %d sessions, %d identity keys and %d sender keys from %s to %s", sessionsUpdated, identityKeysUpdated, senderKeysUpdated, pnSignal, lidSignal)
+		s.log.Debugf("Migrated %d sessions, %d identity keys and %d sender keys from %s to %s", sessionsUpdated, identityKeysUpdated, senderKeysUpdated, pnSignal, lidSignal)
 	} else {
 		s.log.Debugf("No sessions or sender keys found to migrate from %s to %s", pnSignal, lidSignal)
 	}
@@ -704,7 +704,7 @@ func (s *SQLStore) PutAllContactNames(ctx context.Context, contacts []store.Cont
 		return t.JID
 	})
 	if origLen != len(contacts) {
-		s.log.Warnf("%d duplicate contacts found in PutAllContactNames", origLen-len(contacts))
+		s.log.Debugf("%d duplicate contacts found in PutAllContactNames", origLen-len(contacts))
 	}
 	err := s.db.DoTxn(ctx, nil, func(ctx context.Context) error {
 		for slice := range slices.Chunk(contacts, contactBatchSize) {

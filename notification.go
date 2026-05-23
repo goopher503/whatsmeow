@@ -33,7 +33,7 @@ func (cli *Client) handleEncryptNotification(ctx context.Context, node *waBinary
 			cli.Log.Warnf("Didn't get number of OTKs left in encryption notification %s", node.XMLString())
 			return
 		}
-		cli.Log.Infof("Got prekey count from server: %s", node.XMLString())
+		cli.Log.Debugf("Got prekey count from server: %s", node.XMLString())
 		if otksLeft < MinPreKeyCount {
 			cli.uploadPreKeys(ctx, false)
 		}
