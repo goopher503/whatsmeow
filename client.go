@@ -843,7 +843,7 @@ func (cli *Client) handleFrame(ctx context.Context, data []byte) {
 	}
 	if node.Tag == "xmlstreamend" {
 		if !cli.isExpectedDisconnect() {
-			cli.Log.Warnf("Received stream end frame")
+			cli.Log.Debugf("Received stream end frame")
 		}
 		// TODO should we do something else?
 	} else if cli.receiveResponse(ctx, node) {
