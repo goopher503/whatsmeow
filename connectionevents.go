@@ -49,10 +49,10 @@ func (cli *Client) handleStreamError(ctx context.Context, node *waBinary.Node) {
 		cli.expectDisconnect()
 		cli.Log.Infof("Got device removed stream error, sending LoggedOut event and deleting session")
 		go cli.dispatchEvent(&events.LoggedOut{OnConnect: false, Reason: events.ConnectFailureLoggedOut})
-		err := cli.Store.Delete(ctx)
-		if err != nil {
-			cli.Log.Warnf("Failed to delete store after device_removed error: %v", err)
-		}
+		// err := cli.Store.Delete(ctx)
+		// if err != nil {
+		// 	cli.Log.Warnf("Failed to delete store after device_removed error: %v", err)
+		// }
 	case conflictType == "replaced":
 		cli.expectDisconnect()
 		cli.Log.Infof("Got replaced stream error, sending StreamReplaced event")
@@ -134,10 +134,10 @@ func (cli *Client) handleConnectFailure(ctx context.Context, node *waBinary.Node
 	if reason.IsLoggedOut() {
 		cli.Log.Infof("Got %s connect failure, sending LoggedOut event and deleting session", reason)
 		go cli.dispatchEvent(&events.LoggedOut{OnConnect: true, Reason: reason})
-		err := cli.Store.Delete(ctx)
-		if err != nil {
-			cli.Log.Warnf("Failed to delete store after %d failure: %v", int(reason), err)
-		}
+		// err := cli.Store.Delete(ctx)
+		// if err != nil {
+		// 	cli.Log.Warnf("Failed to delete store after %d failure: %v", int(reason), err)
+		// }
 	} else if reason == events.ConnectFailureTempBanned {
 		cli.Log.Warnf("Temporary ban connect failure: %s", node.XMLString())
 		go cli.dispatchEvent(&events.TemporaryBan{
