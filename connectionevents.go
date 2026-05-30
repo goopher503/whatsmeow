@@ -60,7 +60,7 @@ func (cli *Client) handleStreamError(ctx context.Context, node *waBinary.Node) {
 	case code == "503":
 		// This seems to happen when the server wants to restart or something.
 		// The disconnection will be emitted as an events.Disconnected and then the auto-reconnect will do its thing.
-		cli.Log.Warnf("Got 503 stream error, assuming automatic reconnect will handle it")
+		cli.Log.Debugf("Got 503 stream error, assuming automatic reconnect will handle it")
 	case cli.RefreshCAT != nil && (code == events.ConnectFailureCATInvalid.NumberString() || code == events.ConnectFailureCATExpired.NumberString()):
 		cli.Log.Infof("Got %s stream error, refreshing CAT before reconnecting...", code)
 		cli.socketLock.RLock()

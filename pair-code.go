@@ -146,7 +146,7 @@ func (cli *Client) PairPhone(ctx context.Context, phone string, showPushNotifica
 func (cli *Client) tryHandleCodePairNotification(ctx context.Context, parentNode *waBinary.Node) {
 	err := cli.handleCodePairNotification(ctx, parentNode)
 	if err != nil {
-		cli.Log.Errorf("Failed to handle code pair notification: %s", err)
+		cli.Log.Debugf("Failed to handle code pair notification: %s", err)
 	}
 }
 
