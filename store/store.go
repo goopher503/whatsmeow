@@ -224,6 +224,11 @@ type Device struct {
 	RegistrationID uint32
 	AdvSecretKey   []byte
 
+	// PairingEphemeralKey is the ephemeral key pair used during device pairing (Baileys pairingEphemeralKeyPair).
+	PairingEphemeralKey *keys.KeyPair
+	// RoutingInfo is edge routing data received from the server (Baileys routingInfo).
+	RoutingInfo []byte
+
 	ID  *types.JID
 	LID types.JID
 

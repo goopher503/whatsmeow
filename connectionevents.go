@@ -103,6 +103,21 @@ func (cli *Client) handleIB(ctx context.Context, node *waBinary.Node) {
 			//	err := cli.MarkNotDirty(ctx, typ, ts)
 			//	zerolog.Ctx(ctx).Debug().Err(err).Msg("Marked dirty item as clean")
 			//}()
+		case "edge_routing":
+			routingInfoNode, ok := child.GetOptionalChildByTag("routing_info")
+			if !ok {
+				break
+			}
+			content, ok := routingInfoNode.Content.([]byte)
+			if !ok || len(content) == 0 {
+				break
+			}
+			cli.Store.RoutingInfo = content
+			if err := cli.Store.Save(ctx); err != nil {
+				cli.Log.Warnf("Failed to save routing info: %v", err)
+			} else {
+				cli.Log.Debugf("Saved edge routing info (%d bytes)", len(content))
+			}
 		}
 	}
 }
