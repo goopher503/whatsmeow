@@ -999,7 +999,7 @@ func (cli *Client) storeHistoricalMessageSecrets(ctx context.Context, conversati
 		if err != nil {
 			cli.Log.Errorf("Failed to store privacy tokens in history sync: %v", err)
 		} else {
-			cli.Log.Infof("Stored %d privacy tokens from history sync", len(privacyTokens))
+			cli.Log.Debugf("Stored %d privacy tokens from history sync", len(privacyTokens))
 		}
 	}
 }
