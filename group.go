@@ -38,6 +38,16 @@ type ReqCreateGroup struct {
 	// A create key can be provided to deduplicate the group create notification that will be triggered
 	// when the group is created. If provided, the JoinedGroup event will contain the same key.
 	CreateKey types.MessageID
+	// OmitCreateKey omits the create@key attribute (WhatsApp Web 2.3000+ commonly does this).
+	OmitCreateKey bool
+	// MemberShareGroupHistoryMode is embedded in create (e.g. all_member_share). Empty omits the node.
+	MemberShareGroupHistoryMode types.GroupMemberShareHistoryMode
+	// MemberAddMode is embedded in create (e.g. all_member_add). Empty omits the node.
+	MemberAddMode types.GroupMemberAddMode
+	// SendEphemeralZero sends <ephemeral expiration="0"/> in create (matches Web default).
+	SendEphemeralZero bool
+	// SendMembershipApprovalOff sends group_join state=off in create when not using IsJoinApprovalRequired.
+	SendMembershipApprovalOff bool
 
 	types.GroupEphemeral
 	types.GroupAnnounce
@@ -50,53 +60,79 @@ type ReqCreateGroup struct {
 	types.GroupLinkedParent
 }
 
+// ApplyWebCreateDefaults fills create-IQ fields to align with WhatsApp Web 2.3000+.
+// Does not override fields you already set (except enabling SendEphemeralZero / SendMembershipApprovalOff flags).
+func (req *ReqCreateGroup) ApplyWebCreateDefaults() {
+	if req.MemberShareGroupHistoryMode == "" {
+		req.MemberShareGroupHistoryMode = types.GroupMemberShareHistoryAllMember
+	}
+	if req.MemberAddMode == "" {
+		req.MemberAddMode = types.GroupMemberAddModeAllMember
+	}
+	req.SendEphemeralZero = true
+	req.OmitCreateKey = true
+	if !req.IsJoinApprovalRequired {
+		req.SendMembershipApprovalOff = true
+	}
+}
+
 // CreateGroup creates a group on WhatsApp with the given name and participants.
 //
-// See ReqCreateGroup for parameters.
+// See ReqCreateGroup for parameters. Use ApplyWebCreateDefaults to match WhatsApp Web 2.3000+ create stanzas.
 func (cli *Client) CreateGroup(ctx context.Context, req ReqCreateGroup) (*types.GroupInfo, error) {
-	participantNodes := make([]waBinary.Node, len(req.Participants), len(req.Participants)+1)
-	for i, participant := range req.Participants {
-		participantNodes[i] = waBinary.Node{
-			Tag:   "participant",
-			Attrs: waBinary.Attrs{"jid": participant},
-		}
-		pt, err := cli.Store.PrivacyTokens.GetPrivacyToken(ctx, participant)
+	var createContent []waBinary.Node
+
+	if req.MemberShareGroupHistoryMode != "" {
+		createContent = append(createContent, waBinary.Node{
+			Tag:     "member_share_group_history_mode",
+			Content: []byte(req.MemberShareGroupHistoryMode),
+		})
+	}
+	if req.MemberAddMode != "" {
+		createContent = append(createContent, waBinary.Node{
+			Tag:     "member_add_mode",
+			Content: []byte(req.MemberAddMode),
+		})
+	}
+
+	for _, participant := range req.Participants {
+		node, err := cli.buildCreateGroupParticipantNode(ctx, participant)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get privacy token for participant %s: %v", participant, err)
-		} else if pt != nil {
-			participantNodes[i].Content = []waBinary.Node{{
-				Tag:     "privacy",
-				Content: pt.Token,
-			}}
+			return nil, err
 		}
+		createContent = append(createContent, node)
 	}
-	if req.CreateKey == "" {
-		req.CreateKey = cli.GenerateMessageID()
-	}
+
 	if req.IsParent {
 		if req.DefaultMembershipApprovalMode == "" {
 			req.DefaultMembershipApprovalMode = "request_required"
 		}
-		participantNodes = append(participantNodes, waBinary.Node{
+		createContent = append(createContent, waBinary.Node{
 			Tag: "parent",
 			Attrs: waBinary.Attrs{
 				"default_membership_approval_mode": req.DefaultMembershipApprovalMode,
 			},
 		})
 	} else if !req.LinkedParentJID.IsEmpty() {
-		participantNodes = append(participantNodes, waBinary.Node{
+		createContent = append(createContent, waBinary.Node{
 			Tag:   "linked_parent",
 			Attrs: waBinary.Attrs{"jid": req.LinkedParentJID},
 		})
 	}
 	if req.IsLocked {
-		participantNodes = append(participantNodes, waBinary.Node{Tag: "locked"})
+		createContent = append(createContent, waBinary.Node{Tag: "locked"})
 	}
 	if req.IsAnnounce {
-		participantNodes = append(participantNodes, waBinary.Node{Tag: "announcement"})
+		createContent = append(createContent, waBinary.Node{Tag: "announcement"})
 	}
-	if req.IsEphemeral {
-		participantNodes = append(participantNodes, waBinary.Node{
+	if req.SendEphemeralZero {
+		createContent = append(createContent, waBinary.Node{
+			Tag:     "ephemeral",
+			Attrs:   waBinary.Attrs{"expiration": "0"},
+			Content: nil,
+		})
+	} else if req.IsEphemeral {
+		createContent = append(createContent, waBinary.Node{
 			Tag: "ephemeral",
 			Attrs: waBinary.Attrs{
 				"expiration": req.DisappearingTimer,
@@ -105,23 +141,36 @@ func (cli *Client) CreateGroup(ctx context.Context, req ReqCreateGroup) (*types.
 		})
 	}
 	if req.IsJoinApprovalRequired {
-		participantNodes = append(participantNodes, waBinary.Node{
+		createContent = append(createContent, waBinary.Node{
 			Tag: "membership_approval_mode",
 			Content: []waBinary.Node{{
 				Tag:   "group_join",
 				Attrs: waBinary.Attrs{"state": "on"},
 			}},
 		})
+	} else if req.SendMembershipApprovalOff {
+		createContent = append(createContent, waBinary.Node{
+			Tag: "membership_approval_mode",
+			Content: []waBinary.Node{{
+				Tag:     "group_join",
+				Attrs:   waBinary.Attrs{"state": "off"},
+				Content: nil,
+			}},
+		})
 	}
-	// WhatsApp web doesn't seem to include the static prefix for these
-	key := strings.TrimPrefix(req.CreateKey, "3EB0")
+
+	createAttrs := waBinary.Attrs{"subject": req.Name}
+	if !req.OmitCreateKey {
+		if req.CreateKey == "" {
+			req.CreateKey = cli.GenerateMessageID()
+		}
+		createAttrs["key"] = strings.TrimPrefix(req.CreateKey, "3EB0")
+	}
+
 	resp, err := cli.sendGroupIQ(ctx, iqSet, types.GroupServerJID, waBinary.Node{
-		Tag: "create",
-		Attrs: waBinary.Attrs{
-			"subject": req.Name,
-			"key":     key,
-		},
-		Content: participantNodes,
+		Tag:     "create",
+		Attrs:   createAttrs,
+		Content: createContent,
 	})
 	if err != nil {
 		return nil, err
@@ -131,6 +180,60 @@ func (cli *Client) CreateGroup(ctx context.Context, req ReqCreateGroup) (*types.
 		return nil, &ElementMissingError{Tag: "group", In: "response to create group query"}
 	}
 	return cli.parseGroupNode(&groupNode)
+}
+
+func (cli *Client) buildCreateGroupParticipantNode(ctx context.Context, participant types.JID) (waBinary.Node, error) {
+	lid, pn, privacyLookup := cli.resolveCreateGroupParticipantIDs(ctx, participant)
+	attrs := waBinary.Attrs{}
+	if !lid.IsEmpty() {
+		attrs["jid"] = lid
+		if !pn.IsEmpty() {
+			attrs["phone_number"] = pn
+		}
+	} else {
+		attrs["jid"] = participant.ToNonAD()
+	}
+
+	node := waBinary.Node{Tag: "participant", Attrs: attrs}
+	pt, err := cli.Store.PrivacyTokens.GetPrivacyToken(ctx, privacyLookup)
+	if err != nil {
+		return node, fmt.Errorf("failed to get privacy token for participant %s: %w", participant, err)
+	} else if pt != nil {
+		node.Content = []waBinary.Node{{
+			Tag:     "privacy",
+			Content: pt.Token,
+		}}
+	}
+	return node, nil
+}
+
+func (cli *Client) resolveCreateGroupParticipantIDs(ctx context.Context, participant types.JID) (lid, pn, privacyLookup types.JID) {
+	participant = participant.ToNonAD()
+	privacyLookup = participant
+
+	switch participant.Server {
+	case types.HiddenUserServer:
+		lid = participant
+		pn, err := cli.Store.LIDs.GetPNForLID(ctx, lid)
+		if err == nil && !pn.IsEmpty() {
+			privacyLookup = pn
+		}
+	case types.DefaultUserServer, types.LegacyUserServer:
+		pn = participant
+		lid, err := cli.Store.LIDs.GetLIDForPN(ctx, pn)
+		if err == nil && !lid.IsEmpty() {
+			return lid, pn, pn
+		}
+		infos, err := cli.GetUserInfo(ctx, []types.JID{pn})
+		if err == nil {
+			if info, ok := infos[pn]; ok && !info.LID.IsEmpty() {
+				return info.LID, pn, pn
+			}
+		}
+	default:
+		return types.EmptyJID, types.EmptyJID, participant
+	}
+	return lid, pn, privacyLookup
 }
 
 // UnlinkGroup removes a child group from a parent community.
@@ -189,17 +292,17 @@ const (
 func (cli *Client) UpdateGroupParticipants(ctx context.Context, jid types.JID, participantChanges []types.JID, action ParticipantChange) ([]types.GroupParticipant, error) {
 	content := make([]waBinary.Node, len(participantChanges))
 	for i, participantJID := range participantChanges {
+		if action == ParticipantChangeAdd {
+			node, err := cli.buildCreateGroupParticipantNode(ctx, participantJID)
+			if err != nil {
+				return nil, err
+			}
+			content[i] = node
+			continue
+		}
 		content[i] = waBinary.Node{
 			Tag:   "participant",
 			Attrs: waBinary.Attrs{"jid": participantJID},
-		}
-		if participantJID.Server == types.HiddenUserServer && action == ParticipantChangeAdd {
-			pn, err := cli.Store.LIDs.GetPNForLID(ctx, participantJID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get phone number for LID %s: %v", participantJID, err)
-			} else if !pn.IsEmpty() {
-				content[i].Attrs["phone_number"] = pn
-			}
 		}
 	}
 	resp, err := cli.sendGroupIQ(ctx, iqSet, jid, waBinary.Node{

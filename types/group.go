@@ -17,6 +17,13 @@ const (
 	GroupMemberAddModeAllMember GroupMemberAddMode = "all_member_add"
 )
 
+// GroupMemberShareHistoryMode is sent in create IQ (WhatsApp Web 2.3000+).
+type GroupMemberShareHistoryMode string
+
+const (
+	GroupMemberShareHistoryAllMember GroupMemberShareHistoryMode = "all_member_share"
+)
+
 // GroupInfo contains basic information about a group chat on WhatsApp.
 type GroupInfo struct {
 	JID      JID
