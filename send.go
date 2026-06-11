@@ -1128,7 +1128,7 @@ func makeNativeFlowBizNode() waBinary.Node {
 			Content: []waBinary.Node{{
 				Tag: "native_flow",
 				Attrs: waBinary.Attrs{
-					"v":    "9",
+					"v":    "2",
 					"name": "mixed",
 				},
 			}},
