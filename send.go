@@ -156,6 +156,18 @@ type SendRequestExtra struct {
 	Meta *types.MsgMetaInfo
 	// use this only if you know what you are doing
 	AdditionalNodes *[]waBinary.Node
+
+	// SkipSendLock allows callers that intentionally fan out multiple messages at
+	// once to bypass the per-client send queue.
+	SkipSendLock bool
+}
+
+func (cli *Client) lockMessageSendIfNeeded(req SendRequestExtra) func() {
+	if req.SkipSendLock {
+		return func() {}
+	}
+	cli.messageSendLock.Lock()
+	return cli.messageSendLock.Unlock
 }
 
 // SendMessage sends the given message.
@@ -369,9 +381,9 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 	// Sending multiple messages at a time can cause weird issues and makes it harder to retry safely
 	// This is also required for the session prefetching that makes group sends faster
 	// (everything will explode if you send a message to the same user twice in parallel)
-	cli.messageSendLock.Lock()
+	unlockMessageSend := cli.lockMessageSendIfNeeded(req)
 	resp.DebugTimings.Queue = time.Since(start)
-	defer cli.messageSendLock.Unlock()
+	defer unlockMessageSend()
 
 	// Peer message retries aren't implemented yet
 	if !req.Peer {
