@@ -80,59 +80,49 @@ func (req *ReqCreateGroup) ApplyWebCreateDefaults() {
 //
 // See ReqCreateGroup for parameters. Use ApplyWebCreateDefaults to match WhatsApp Web 2.3000+ create stanzas.
 func (cli *Client) CreateGroup(ctx context.Context, req ReqCreateGroup) (*types.GroupInfo, error) {
-	var createContent []waBinary.Node
-
-	if req.MemberShareGroupHistoryMode != "" {
-		createContent = append(createContent, waBinary.Node{
-			Tag:     "member_share_group_history_mode",
-			Content: []byte(req.MemberShareGroupHistoryMode),
-		})
-	}
-	if req.MemberAddMode != "" {
-		createContent = append(createContent, waBinary.Node{
-			Tag:     "member_add_mode",
-			Content: []byte(req.MemberAddMode),
-		})
-	}
-
-	for _, participant := range req.Participants {
-		node, err := cli.buildCreateGroupParticipantNode(ctx, participant)
-		if err != nil {
-			return nil, err
+	participantNodes := make([]waBinary.Node, len(req.Participants), len(req.Participants)+1)
+	for i, participant := range req.Participants {
+		participantNodes[i] = waBinary.Node{
+			Tag:   "participant",
+			Attrs: waBinary.Attrs{"jid": participant},
 		}
-		createContent = append(createContent, node)
+		token, err := cli.ensureTCToken(ctx, participant)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get privacy token for participant %s: %v", participant, err)
+		} else if len(token) > 0 {
+			participantNodes[i].Content = []waBinary.Node{{
+				Tag:     "privacy",
+				Content: token,
+			}}
+		}
 	}
-
+	if req.CreateKey == "" {
+		req.CreateKey = cli.GenerateMessageID()
+	}
 	if req.IsParent {
 		if req.DefaultMembershipApprovalMode == "" {
 			req.DefaultMembershipApprovalMode = "request_required"
 		}
-		createContent = append(createContent, waBinary.Node{
+		participantNodes = append(participantNodes, waBinary.Node{
 			Tag: "parent",
 			Attrs: waBinary.Attrs{
 				"default_membership_approval_mode": req.DefaultMembershipApprovalMode,
 			},
 		})
 	} else if !req.LinkedParentJID.IsEmpty() {
-		createContent = append(createContent, waBinary.Node{
+		participantNodes = append(participantNodes, waBinary.Node{
 			Tag:   "linked_parent",
 			Attrs: waBinary.Attrs{"jid": req.LinkedParentJID},
 		})
 	}
 	if req.IsLocked {
-		createContent = append(createContent, waBinary.Node{Tag: "locked"})
+		participantNodes = append(participantNodes, waBinary.Node{Tag: "locked"})
 	}
 	if req.IsAnnounce {
-		createContent = append(createContent, waBinary.Node{Tag: "announcement"})
+		participantNodes = append(participantNodes, waBinary.Node{Tag: "announcement"})
 	}
-	if req.SendEphemeralZero {
-		createContent = append(createContent, waBinary.Node{
-			Tag:     "ephemeral",
-			Attrs:   waBinary.Attrs{"expiration": "0"},
-			Content: nil,
-		})
-	} else if req.IsEphemeral {
-		createContent = append(createContent, waBinary.Node{
+	if req.IsEphemeral {
+		participantNodes = append(participantNodes, waBinary.Node{
 			Tag: "ephemeral",
 			Attrs: waBinary.Attrs{
 				"expiration": req.DisappearingTimer,
@@ -141,36 +131,23 @@ func (cli *Client) CreateGroup(ctx context.Context, req ReqCreateGroup) (*types.
 		})
 	}
 	if req.IsJoinApprovalRequired {
-		createContent = append(createContent, waBinary.Node{
+		participantNodes = append(participantNodes, waBinary.Node{
 			Tag: "membership_approval_mode",
 			Content: []waBinary.Node{{
 				Tag:   "group_join",
 				Attrs: waBinary.Attrs{"state": "on"},
 			}},
 		})
-	} else if req.SendMembershipApprovalOff {
-		createContent = append(createContent, waBinary.Node{
-			Tag: "membership_approval_mode",
-			Content: []waBinary.Node{{
-				Tag:     "group_join",
-				Attrs:   waBinary.Attrs{"state": "off"},
-				Content: nil,
-			}},
-		})
 	}
-
-	createAttrs := waBinary.Attrs{"subject": req.Name}
-	if !req.OmitCreateKey {
-		if req.CreateKey == "" {
-			req.CreateKey = cli.GenerateMessageID()
-		}
-		createAttrs["key"] = strings.TrimPrefix(req.CreateKey, "3EB0")
-	}
-
+	// WhatsApp web doesn't seem to include the static prefix for these
+	key := strings.TrimPrefix(req.CreateKey, "3EB0")
 	resp, err := cli.sendGroupIQ(ctx, iqSet, types.GroupServerJID, waBinary.Node{
-		Tag:     "create",
-		Attrs:   createAttrs,
-		Content: createContent,
+		Tag: "create",
+		Attrs: waBinary.Attrs{
+			"subject": req.Name,
+			"key":     key,
+		},
+		Content: participantNodes,
 	})
 	if err != nil {
 		return nil, err
@@ -292,17 +269,28 @@ const (
 func (cli *Client) UpdateGroupParticipants(ctx context.Context, jid types.JID, participantChanges []types.JID, action ParticipantChange) ([]types.GroupParticipant, error) {
 	content := make([]waBinary.Node, len(participantChanges))
 	for i, participantJID := range participantChanges {
-		if action == ParticipantChangeAdd {
-			node, err := cli.buildCreateGroupParticipantNode(ctx, participantJID)
-			if err != nil {
-				return nil, err
-			}
-			content[i] = node
-			continue
-		}
 		content[i] = waBinary.Node{
 			Tag:   "participant",
 			Attrs: waBinary.Attrs{"jid": participantJID},
+		}
+		if participantJID.Server == types.HiddenUserServer && action == ParticipantChangeAdd {
+			pn, err := cli.Store.LIDs.GetPNForLID(ctx, participantJID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get phone number for LID %s: %v", participantJID, err)
+			} else if !pn.IsEmpty() {
+				content[i].Attrs["phone_number"] = pn
+			}
+		}
+		if action == ParticipantChangeAdd {
+			token, err := cli.ensureTCToken(ctx, participantJID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get privacy token for participant %s: %v", participantJID, err)
+			} else if len(token) > 0 {
+				content[i].Content = []waBinary.Node{{
+					Tag:     "privacy",
+					Content: token,
+				}}
+			}
 		}
 	}
 	resp, err := cli.sendGroupIQ(ctx, iqSet, jid, waBinary.Node{
