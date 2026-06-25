@@ -244,6 +244,118 @@ func (cli *Client) LinkGroup(ctx context.Context, parent, child types.JID) error
 	return err
 }
 
+// SuggestSubGroup submits a child group suggestion to a community for approval.
+func (cli *Client) SuggestSubGroup(ctx context.Context, community, group types.JID) error {
+	_, err := cli.sendGroupIQ(ctx, iqSet, community, buildSubGroupSuggestionNode(group))
+	return err
+}
+
+func buildSubGroupSuggestionNode(group types.JID) waBinary.Node {
+	return waBinary.Node{
+		Tag: "sub_group_suggestion",
+		Content: []waBinary.Node{{
+			Tag:   "group",
+			Attrs: waBinary.Attrs{"jid": group},
+		}},
+	}
+}
+
+type SubGroupSuggestion struct {
+	JID         types.JID
+	Creator     types.JID
+	Subject     string
+	Description string
+}
+
+// GetSubGroupSuggestions gets pending subgroup suggestions for a community.
+func (cli *Client) GetSubGroupSuggestions(ctx context.Context, community types.JID) ([]SubGroupSuggestion, error) {
+	res, err := cli.sendGroupIQ(ctx, iqGet, community, buildGetSubGroupSuggestionsNode())
+	if err != nil {
+		return nil, err
+	}
+	suggestions, ok := res.GetOptionalChildByTag("sub_group_suggestions")
+	if !ok {
+		return nil, &ElementMissingError{Tag: "sub_group_suggestions", In: "response to subgroup suggestions query"}
+	}
+	return parseSubGroupSuggestionsNode(&suggestions)
+}
+
+func buildGetSubGroupSuggestionsNode() waBinary.Node {
+	return waBinary.Node{Tag: "sub_group_suggestions"}
+}
+
+func parseSubGroupSuggestionsNode(node *waBinary.Node) ([]SubGroupSuggestion, error) {
+	children := node.GetChildren()
+	suggestions := make([]SubGroupSuggestion, 0, len(children))
+	for _, child := range children {
+		if child.Tag != "sub_group_suggestion" {
+			continue
+		}
+		ag := child.AttrGetter()
+		suggestion := SubGroupSuggestion{
+			JID:         ag.JID("jid"),
+			Creator:     ag.JID("creator"),
+			Subject:     ag.OptionalString("subject"),
+			Description: ag.OptionalString("desc"),
+		}
+		if err := ag.Error(); err != nil {
+			return suggestions, err
+		}
+		suggestions = append(suggestions, suggestion)
+	}
+	return suggestions, nil
+}
+
+// ApproveSubGroupSuggestion approves a pending subgroup suggestion in a community.
+func (cli *Client) ApproveSubGroupSuggestion(ctx context.Context, community, group, creator types.JID) error {
+	return cli.ApproveSubGroupSuggestions(ctx, community, []SubGroupSuggestion{{
+		JID:     group,
+		Creator: creator,
+	}})
+}
+
+// ApproveSubGroupSuggestions approves multiple pending subgroup suggestions in a community.
+func (cli *Client) ApproveSubGroupSuggestions(ctx context.Context, community types.JID, suggestions []SubGroupSuggestion) error {
+	if len(suggestions) == 0 {
+		return nil
+	}
+	_, err := cli.sendGroupIQ(ctx, iqSet, community, buildSubGroupSuggestionsActionNode("approve", suggestions))
+	return err
+}
+
+// RejectSubGroupSuggestion rejects a pending subgroup suggestion in a community.
+func (cli *Client) RejectSubGroupSuggestion(ctx context.Context, community, group, creator types.JID) error {
+	_, err := cli.sendGroupIQ(ctx, iqSet, community, buildSubGroupSuggestionActionNode("reject", group, creator))
+	return err
+}
+
+func buildSubGroupSuggestionActionNode(action string, group, creator types.JID) waBinary.Node {
+	return buildSubGroupSuggestionsActionNode(action, []SubGroupSuggestion{{
+		JID:     group,
+		Creator: creator,
+	}})
+}
+
+func buildSubGroupSuggestionsActionNode(action string, suggestions []SubGroupSuggestion) waBinary.Node {
+	children := make([]waBinary.Node, 0, len(suggestions))
+	for _, suggestion := range suggestions {
+		children = append(children, waBinary.Node{
+			Tag: "sub_group_suggestion",
+			Attrs: waBinary.Attrs{
+				"creator": suggestion.Creator,
+				"jid":     suggestion.JID,
+			},
+		})
+	}
+	return waBinary.Node{
+		Tag: "sub_group_suggestions_action",
+		Content: []waBinary.Node{{
+			Tag:     action,
+			Content: children,
+		}},
+	}
+}
+
 // LeaveGroup leaves the specified group on WhatsApp.
 func (cli *Client) LeaveGroup(ctx context.Context, jid types.JID) error {
 	_, err := cli.sendGroupIQ(ctx, iqSet, types.GroupServerJID, waBinary.Node{
