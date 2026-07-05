@@ -193,7 +193,7 @@ func (cli *Client) handlePair(ctx context.Context, deviceIdentityBytes []byte, r
 
 	cli.Store.Account = proto.Clone(&deviceIdentity).(*waAdv.ADVSignedDeviceIdentity)
 
-	if linkCache := cli.phoneLinkingCache; linkCache != nil && linkCache.keyPair != nil {
+	if linkCache := cli.phoneLinkingCache.Load(); linkCache != nil && linkCache.keyPair != nil {
 		cli.Store.PairingEphemeralKey = linkCache.keyPair
 	}
 
