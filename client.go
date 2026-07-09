@@ -896,7 +896,7 @@ Loop:
 					ticker.Stop()
 					continue Loop
 				case <-ticker.C:
-					cli.Log.Warnf("Node handling is taking long for %s (started %s ago)", node, time.Since(start))
+					cli.Log.Debugf("Node handling is taking long for %s (started %s ago)", node, time.Since(start))
 				}
 			}
 			cli.Log.Warnf("Continuing handling of %s in background as it's taking too long", node)
