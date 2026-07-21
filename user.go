@@ -175,11 +175,12 @@ func (cli *Client) SetStatusMessage(ctx context.Context, msg string) error {
 }
 
 // IsOnWhatsApp checks if the given phone numbers are registered on WhatsApp.
-// The phone numbers should be in international format, including the `+` prefix.
+// The phone numbers should be in international format; a leading `+` is optional.
 func (cli *Client) IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error) {
 	jids := make([]types.JID, len(phones))
 	for i := range jids {
-		jids[i] = types.NewJID(phones[i], types.LegacyUserServer)
+		// WA Web sends contact content as digits only (no '+' / no @c.us).
+		jids[i] = types.NewJID(strings.TrimPrefix(phones[i], "+"), types.LegacyUserServer)
 	}
 	list, err := cli.usync(ctx, jids, "query", "interactive", []waBinary.Node{
 		{Tag: "contact", Attrs: waBinary.Attrs{"addressing_mode": "lid"}},
@@ -875,6 +876,11 @@ type UsyncQueryExtras struct {
 	IncludePrivacyToken bool
 }
 
+// UsyncQuery sends a low-level usync IQ. Useful for matching official client flows.
+func (cli *Client) UsyncQuery(ctx context.Context, jids []types.JID, mode, context string, query []waBinary.Node, extra ...UsyncQueryExtras) (*waBinary.Node, error) {
+	return cli.usync(ctx, jids, mode, context, query, extra...)
+}
+
 func (cli *Client) usync(ctx context.Context, jids []types.JID, mode, context string, query []waBinary.Node, extra ...UsyncQueryExtras) (*waBinary.Node, error) {
 	if cli == nil {
 		return nil, ErrClientIsNil
@@ -893,9 +899,10 @@ func (cli *Client) usync(ctx context.Context, jids []types.JID, mode, context st
 
 		switch jid.Server {
 		case types.LegacyUserServer:
+			// WA Web uses bare phone digits in <contact>, not "+<phone>@c.us".
 			userList[i].Content = []waBinary.Node{{
 				Tag:     "contact",
-				Content: jid.String(),
+				Content: strings.TrimPrefix(jid.User, "+"),
 			}}
 		case types.DefaultUserServer, types.HiddenUserServer:
 			// NOTE: You can pass in an LID with a JID (<lid jid=...> user node)

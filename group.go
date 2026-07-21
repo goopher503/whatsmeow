@@ -191,8 +191,9 @@ func (cli *Client) resolveCreateGroupParticipantIDs(ctx context.Context, partici
 	switch participant.Server {
 	case types.HiddenUserServer:
 		lid = participant
-		pn, err := cli.Store.LIDs.GetPNForLID(ctx, lid)
-		if err == nil && !pn.IsEmpty() {
+		foundPN, err := cli.Store.LIDs.GetPNForLID(ctx, lid)
+		if err == nil && !foundPN.IsEmpty() {
+			pn = foundPN.ToNonAD()
 			privacyLookup = pn
 		}
 	case types.DefaultUserServer, types.LegacyUserServer:
@@ -379,30 +380,18 @@ const (
 
 // UpdateGroupParticipants can be used to add, remove, promote and demote members in a WhatsApp group.
 func (cli *Client) UpdateGroupParticipants(ctx context.Context, jid types.JID, participantChanges []types.JID, action ParticipantChange) ([]types.GroupParticipant, error) {
+	members := make([]GroupParticipantAdd, len(participantChanges))
+	for i, participantJID := range participantChanges {
+		members[i] = GroupParticipantAdd{JID: participantJID}
+	}
+	if action == ParticipantChangeAdd {
+		return cli.AddGroupParticipants(ctx, jid, members)
+	}
 	content := make([]waBinary.Node, len(participantChanges))
 	for i, participantJID := range participantChanges {
 		content[i] = waBinary.Node{
 			Tag:   "participant",
 			Attrs: waBinary.Attrs{"jid": participantJID},
-		}
-		if participantJID.Server == types.HiddenUserServer && action == ParticipantChangeAdd {
-			pn, err := cli.Store.LIDs.GetPNForLID(ctx, participantJID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get phone number for LID %s: %v", participantJID, err)
-			} else if !pn.IsEmpty() {
-				content[i].Attrs["phone_number"] = pn
-			}
-		}
-		if action == ParticipantChangeAdd {
-			token, err := cli.ensureTCToken(ctx, participantJID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get privacy token for participant %s: %v", participantJID, err)
-			} else if len(token) > 0 {
-				content[i].Content = []waBinary.Node{{
-					Tag:     "privacy",
-					Content: token,
-				}}
-			}
 		}
 	}
 	resp, err := cli.sendGroupIQ(ctx, iqSet, jid, waBinary.Node{
@@ -415,6 +404,65 @@ func (cli *Client) UpdateGroupParticipants(ctx context.Context, jid types.JID, p
 	requestAction, ok := resp.GetOptionalChildByTag(string(action))
 	if !ok {
 		return nil, &ElementMissingError{Tag: string(action), In: "response to group participants update"}
+	}
+	requestParticipants := requestAction.GetChildrenByTag("participant")
+	participants := make([]types.GroupParticipant, len(requestParticipants))
+	for i, child := range requestParticipants {
+		participants[i] = parseParticipant(child.AttrGetter(), &child)
+	}
+	return participants, nil
+}
+
+// GroupParticipantAdd is one member to add, matching WA Web wire format.
+type GroupParticipantAdd struct {
+	// JID is preferably the LID; PN may be used as fallback.
+	JID types.JID
+	// PhoneNumber is the @s.whatsapp.net JID. Required by WA Web alongside LID.
+	PhoneNumber types.JID
+}
+
+// AddGroupParticipants adds members using the WA Web format:
+// <participant jid="...@lid" phone_number="...@s.whatsapp.net"/> with empty content.
+func (cli *Client) AddGroupParticipants(ctx context.Context, group types.JID, members []GroupParticipantAdd) ([]types.GroupParticipant, error) {
+	content := make([]waBinary.Node, len(members))
+	for i, member := range members {
+		lid, pn, _ := cli.resolveCreateGroupParticipantIDs(ctx, member.JID)
+		if !member.PhoneNumber.IsEmpty() && member.PhoneNumber.Server == types.DefaultUserServer {
+			pn = member.PhoneNumber.ToNonAD()
+		}
+		if lid.IsEmpty() && member.JID.Server == types.HiddenUserServer {
+			lid = member.JID.ToNonAD()
+		}
+		// Prefer persisting mapping when both sides are known.
+		if !lid.IsEmpty() && !pn.IsEmpty() && cli.Store != nil && cli.Store.LIDs != nil {
+			_ = cli.Store.LIDs.PutLIDMapping(ctx, lid, pn)
+		}
+		attrs := waBinary.Attrs{}
+		if !lid.IsEmpty() {
+			attrs["jid"] = lid
+			if !pn.IsEmpty() {
+				attrs["phone_number"] = pn
+			} else {
+				cli.Log.Warnf("Adding group participant %s without phone_number (PN mapping missing)", lid)
+			}
+		} else {
+			attrs["jid"] = member.JID.ToNonAD()
+			if !pn.IsEmpty() {
+				attrs["phone_number"] = pn
+			}
+		}
+		content[i] = waBinary.Node{Tag: "participant", Attrs: attrs}
+	}
+	resp, err := cli.sendGroupIQ(ctx, iqSet, group, waBinary.Node{
+		Tag:     string(ParticipantChangeAdd),
+		Content: content,
+	})
+	if err != nil {
+		return nil, err
+	}
+	requestAction, ok := resp.GetOptionalChildByTag(string(ParticipantChangeAdd))
+	if !ok {
+		return nil, &ElementMissingError{Tag: string(ParticipantChangeAdd), In: "response to group participants update"}
 	}
 	requestParticipants := requestAction.GetChildrenByTag("participant")
 	participants := make([]types.GroupParticipant, len(requestParticipants))
