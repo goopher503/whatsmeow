@@ -900,7 +900,7 @@ Loop:
 					cli.Log.Debugf("Node handling is taking long for %s (started %s ago)", node, time.Since(start))
 				}
 			}
-			cli.Log.Warnf("Continuing handling of %s in background as it's taking too long", node)
+			cli.Log.Debugf("Continuing handling of %s in background as it's taking too long", node)
 			ticker.Stop()
 		case <-connCtx.Done():
 			cli.Log.Debugf("Closing handler queue loop")
