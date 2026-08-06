@@ -245,6 +245,7 @@ type Device struct {
 	OSPlatformType *waCompanionReg.DeviceProps_PlatformType
 
 	LIDMigrationTimestamp int64
+	CompanionMetaNonce    string
 
 	FacebookUUID uuid.UUID
 

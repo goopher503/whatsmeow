@@ -120,7 +120,7 @@ SELECT jid, lid, registration_id, noise_key, identity_key,
        signed_pre_key, signed_pre_key_id, signed_pre_key_sig,
        adv_key, adv_details, adv_account_sig, adv_account_sig_key, adv_device_sig,
        platform, business_name, push_name, facebook_uuid, lid_migration_ts,
-       pairing_ephemeral_key, routing_info
+       pairing_ephemeral_key, routing_info, companion_meta_nonce
 FROM whatsmeow_device
 `
 
@@ -140,7 +140,7 @@ func (c *Container) scanDevice(row dbutil.Scannable) (*store.Device, error) {
 		&preKeyPriv, &device.SignedPreKey.KeyID, &preKeySig,
 		&device.AdvSecretKey, &account.Details, &account.AccountSignature, &account.AccountSignatureKey, &account.DeviceSignature,
 		&device.Platform, &device.BusinessName, &device.PushName, &fbUUID, &device.LIDMigrationTimestamp,
-		&pairingEphemeralPriv, &routingInfo)
+		&pairingEphemeralPriv, &routingInfo, &device.CompanionMetaNonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan session: %w", err)
 	} else if len(noisePriv) != 32 || len(identityPriv) != 32 || len(preKeyPriv) != 32 || len(preKeySig) != 64 {
@@ -203,8 +203,8 @@ const (
 									  signed_pre_key, signed_pre_key_id, signed_pre_key_sig,
 									  adv_key, adv_details, adv_account_sig, adv_account_sig_key, adv_device_sig,
 									  platform, business_name, push_name, facebook_uuid, lid_migration_ts,
-									  pairing_ephemeral_key, routing_info)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+									  pairing_ephemeral_key, routing_info, companion_meta_nonce)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 		ON CONFLICT (jid) DO UPDATE
 			SET lid=excluded.lid,
 				platform=excluded.platform,
@@ -212,7 +212,8 @@ const (
 				push_name=excluded.push_name,
 				lid_migration_ts=excluded.lid_migration_ts,
 				pairing_ephemeral_key=excluded.pairing_ephemeral_key,
-				routing_info=excluded.routing_info
+				routing_info=excluded.routing_info,
+				companion_meta_nonce=excluded.companion_meta_nonce
 	`
 	deleteDeviceQuery = `DELETE FROM whatsmeow_device WHERE jid=$1`
 )
@@ -230,7 +231,7 @@ func (c *Container) NewDevice() *store.Device {
 		IdentityKey:         keys.NewKeyPair(),
 		PairingEphemeralKey: keys.NewKeyPair(),
 		RegistrationID:      mathRand.Uint32(),
-		AdvSecretKey:   random.Bytes(32),
+		AdvSecretKey:        random.Bytes(32),
 	}
 	device.SignedPreKey = device.IdentityKey.CreateSignedPreKey(1)
 	return device
@@ -262,7 +263,7 @@ func (c *Container) PutDevice(ctx context.Context, device *store.Device) error {
 		device.SignedPreKey.Priv[:], device.SignedPreKey.KeyID, device.SignedPreKey.Signature[:],
 		device.AdvSecretKey, device.Account.Details, device.Account.AccountSignature, device.Account.AccountSignatureKey, device.Account.DeviceSignature,
 		device.Platform, device.BusinessName, device.PushName, uuid.NullUUID{UUID: device.FacebookUUID, Valid: device.FacebookUUID != uuid.Nil},
-		device.LIDMigrationTimestamp, pairingEphemeralPriv, device.RoutingInfo,
+		device.LIDMigrationTimestamp, pairingEphemeralPriv, device.RoutingInfo, device.CompanionMetaNonce,
 	)
 
 	if !device.Initialized {

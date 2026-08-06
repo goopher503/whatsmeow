@@ -1,4 +1,4 @@
--- v0 -> v15 (compatible with v8+): Latest schema
+-- v0 -> v16 (compatible with v8+): Latest schema
 CREATE TABLE whatsmeow_device (
 	jid TEXT PRIMARY KEY,
 	lid TEXT,
@@ -27,7 +27,8 @@ CREATE TABLE whatsmeow_device (
 	lid_migration_ts BIGINT NOT NULL DEFAULT 0,
 
 	pairing_ephemeral_key bytea CHECK ( pairing_ephemeral_key IS NULL OR length(pairing_ephemeral_key) = 32 ),
-	routing_info          bytea
+	routing_info          bytea,
+	companion_meta_nonce TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE whatsmeow_identity_keys (
